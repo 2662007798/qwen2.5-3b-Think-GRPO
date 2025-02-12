@@ -16,4 +16,6 @@ pip install --no-deps trl peft accelerate bitsandbytes
 
 如果没有  直接 pip -r requirements.txt 即可  
 
-当然 你也可以直接选择pip -r requirements.txt 进行安装。
+当然 即使你有conda  创建一个新的环境  你也可以直接选择pip -r requirements.txt 进行安装。
+
+欢迎大家来共同学习，有问题多交流。
