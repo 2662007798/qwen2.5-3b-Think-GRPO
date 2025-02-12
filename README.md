@@ -1,5 +1,6 @@
 # qwen2.5-3b-Think-GRPO
-
+基于unsloth的GRPO训练
+https://github.com/unslothai/unsloth
 如果你有conda
 ```
 conda create --name unsloth_env \
