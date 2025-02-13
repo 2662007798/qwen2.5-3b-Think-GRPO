@@ -52,15 +52,15 @@ PatchFastRL("GRPO", FastLanguageModel)
 from unsloth import is_bfloat16_supported
 import torch
 max_seq_length = 2048 # Can increase for longer Think traces
-lora_rank = 128 # Larger rank = smarter, but slower
+lora_rank = 64 # Larger rank = smarter, but slower
 
 model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name = "Qwen/Qwen2.5-3B-Instruct",
+    model_name = "/home/jc/mod/qwen2.5-3b-Instruct",
     max_seq_length = max_seq_length,
     load_in_4bit = True, # False for LoRA 16bit
     fast_inference = True, # Enable vLLM fast inference
     max_lora_rank = lora_rank,
-    gpu_memory_utilization = 0.3, # Reduce if out of memory
+    gpu_memory_utilization = 0.75, # Reduce if out of memory
 )
 
 model = FastLanguageModel.get_peft_model(
@@ -87,7 +87,7 @@ from datasets import load_dataset, Dataset
 # Load and prep dataset
 SYSTEM_PROMPT = """
 使用MarkDown格式进行输出。
-按照以下格式进行数学问题的细致推理和解答:
+按照以下格式进行数学问题的细致推理和解答：
 
 <Think>
 1. 理解问题要求
@@ -338,10 +338,89 @@ def xmlcount_reward_func(completions, **kwargs) -> list[float]:
 Now set up GRPO Trainer and all configurations!
 """
 
+import wandb
+from datetime import datetime
+from transformers.trainer_callback import TrainerCallback
+
+# 设置环境变量
+import os
+import resource
+import shutil
+import tempfile
+from contextlib import contextmanager
+
+# 设置文件句柄限制
+def set_ulimit():
+    try:
+        # 获取当前系统的限制
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        # 设置为最大值
+        resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
+        print(f"设置文件句柄限制为: {hard}")
+    except Exception as e:
+        print(f"设置文件句柄限制失败: {e}")
+
+@contextmanager
+def manage_temp_dir():
+    original_temp = tempfile.gettempdir()
+    try:
+        # 创建新的临时目录
+        temp_dir = tempfile.mkdtemp(prefix='train_temp_')
+        tempfile.tempdir = temp_dir
+        yield
+    finally:
+        # 恢复原始临时目录
+        tempfile.tempdir = original_temp
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception as e:
+            print(f"清理临时目录失败: {e}")
+
+# 在程序开始时设置限制
+set_ulimit()
+
+# 设置环境变量
+os.environ['HTTPS_PROXY'] = 'http://10.0.1.31:7890'
+os.environ['HTTP_PROXY'] = 'http://10.0.1.31:7890'
+
+# wandb初始化
+wandb.init(
+    project="logic-rl",
+    name=f"train_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+    config={
+        "model": "qwen2.5-3b-Instruct",
+        "max_seq_length": max_seq_length,
+        "lora_rank": lora_rank,
+        "learning_rate": 1e-6,
+        "batch_size": 1,
+        "gradient_accumulation_steps": 4,
+    }
+)
+
+# 自定义wandb回调
+class WandbCallback(TrainerCallback):
+    def on_train_begin(self, args, state, control, **kwargs):
+        pass
+        
+    def on_train_end(self, args, state, control, **kwargs):
+        pass
+        
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs:
+            # 记录所有指标
+            wandb.log(logs)
+            
+            # 添加自定义指标
+            if "reward" in logs:
+                wandb.log({
+                    "total_reward": logs["reward"],
+                    "reward_std": logs.get("reward_std", 0),
+                })
+
 from trl import GRPOConfig, GRPOTrainer
 training_args = GRPOConfig(
     use_vllm = True, # use vLLM for fast inference!
-    learning_rate = 5e-6,
+    learning_rate = 1e-6,
     adam_beta1 = 0.9,
     adam_beta2 = 0.99,
     weight_decay = 0.1,
@@ -352,15 +431,14 @@ training_args = GRPOConfig(
     bf16 = is_bfloat16_supported(),
     fp16 = not is_bfloat16_supported(),
     per_device_train_batch_size = 1,
-    gradient_accumulation_steps = 4, # Increase to 4 for smoother training
-    num_generations = 2, # Decrease if out of memory
+    gradient_accumulation_steps = 1, # Increase to 4 for smoother training
+    num_generations = 2,
     max_prompt_length = 256,
     max_completion_length = 2048,
-    # num_train_epochs = 1, # Set to 1 for a full training run
     max_steps = 1000,
     save_steps = 5,
     max_grad_norm = 0.1,
-    report_to = "none", # Can use Weights & Biases
+    report_to = "wandb",  # 启用wandb记录
     output_dir = "outputs",
 )
 
@@ -393,7 +471,20 @@ trainer = GRPOTrainer(
     args = training_args,
     train_dataset = dataset,
 )
-trainer.train()
+
+# 添加wandb回调
+trainer.add_callback(WandbCallback())
+
+# 在训练代码周围使用临时目录管理
+with manage_temp_dir():
+    try:
+        trainer.train()
+    finally:
+        wandb.finish()
+
+    # 清理CUDA缓存
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 """<a name="Inference"></a>
 ### Inference
@@ -408,7 +499,7 @@ from vllm import SamplingParams
 sampling_params = SamplingParams(
     temperature = 0.8,
     top_p = 0.95,
-    max_tokens = 1024,
+    max_tokens = 2048,
 )
 output = model.fast_generate(
     [text],
@@ -433,7 +524,7 @@ from vllm import SamplingParams
 sampling_params = SamplingParams(
     temperature = 0.8,
     top_p = 0.95,
-    max_tokens = 1024,
+    max_tokens = 8096,
 )
 output = model.fast_generate(
     text,
@@ -511,6 +602,11 @@ Some other links:
   <a href="https://unsloth.ai"><img src="https://github.com/unslothai/unsloth/raw/main/images/unsloth%20new%20logo.png" width="115"></a>
   <a href="https://discord.gg/unsloth"><img src="https://github.com/unslothai/unsloth/raw/main/images/Discord.png" width="145"></a>
   <a href="https://docs.unsloth.ai/"><img src="https://github.com/unslothai/unsloth/blob/main/images/documentation%20green%20button.png?raw=true" width="125"></a>
+
+  Join Discord if you need help + ⭐️ <i>Star us on <a href="https://github.com/unslothai/unsloth">Github</a> </i> ⭐️
+</div>
+
+
 
   Join Discord if you need help + ⭐️ <i>Star us on <a href="https://github.com/unslothai/unsloth">Github</a> </i> ⭐️
 </div>
