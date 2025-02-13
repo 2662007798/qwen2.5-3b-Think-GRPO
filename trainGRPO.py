@@ -61,6 +61,7 @@ model, tokenizer = FastLanguageModel.from_pretrained(
     fast_inference = True, # Enable vLLM fast inference
     max_lora_rank = lora_rank,
     gpu_memory_utilization = 0.75, # Reduce if out of memory
+    use_cuda_graph = True,    # 加速
 )
 
 model = FastLanguageModel.get_peft_model(
@@ -86,22 +87,17 @@ from datasets import load_dataset, Dataset
 
 # Load and prep dataset
 SYSTEM_PROMPT = """
-使用MarkDown格式进行输出。
-按照以下格式进行数学问题的细致推理和解答：
 
+按照以下格式进行数学问题的细致推理和解答：
+在Think中要理解问题要求并列出已知条件尝试设计解题策略开始逐步计算过程并考虑验证结果
+在answer中请详细验证推理结果答案是否准确并且补充说明解法的适用条件或限制查看可能存在的其他解法或变化思考相关的数学概念和注意事项并尝试使用MarkDown格式输出。
+请使用中文并且使用以下格式进行输出：
 <Think>
-1. 理解问题要求
-2. 列出已知条件
-3. 设计解题策略
-4. 逐步计算过程
-5. 验证结果
+...
 </Think>
 
 <answer>
-1. 一步步验证推理结果答案是否准确，并以MarkDown格式输出
-2. 补充说明解法的适用条件或限制
-3. 可能存在的其他解法或变化
-4. 相关的数学概念和注意事项
+...
 </answer>
 """
 
@@ -435,8 +431,8 @@ training_args = GRPOConfig(
     num_generations = 2,
     max_prompt_length = 256,
     max_completion_length = 2048,
-    max_steps = 1000,
-    save_steps = 5,
+    max_steps = 500,
+    save_steps = 500,
     max_grad_norm = 0.1,
     report_to = "wandb",  # 启用wandb记录
     output_dir = "outputs",
