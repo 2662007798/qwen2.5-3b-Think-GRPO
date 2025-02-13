@@ -2,7 +2,9 @@
 基于unsloth的GRPO训练
 https://github.com/unslothai/unsloth
 
-200步复现"aha" 时刻
+
+
+在24G显存200步复现"aha" 时刻
 
 ![fbf3d09c887a6a496779c63f2b82a94](https://github.com/user-attachments/assets/f8517316-249b-4d46-82eb-2e5eafe1e091)
 
