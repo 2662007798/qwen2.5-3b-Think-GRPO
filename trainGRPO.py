@@ -55,7 +55,7 @@ max_seq_length = 2048 # Can increase for longer Think traces
 lora_rank = 128 # Larger rank = smarter, but slower
 
 model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name = "/home/jc/mod/qwen2.5-3b-Instruct",
+    model_name = "Qwen/Qwen2.5-3B-Instruct",
     max_seq_length = max_seq_length,
     load_in_4bit = True, # False for LoRA 16bit
     fast_inference = True, # Enable vLLM fast inference
