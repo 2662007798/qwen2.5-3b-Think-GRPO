@@ -138,3 +138,4 @@ xgrammar==0.1.11
 xxhash==3.5.0
 yarl==1.18.3
 zipp==3.21.0
+wandb==0.16.3
