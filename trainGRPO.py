@@ -87,12 +87,21 @@ from datasets import load_dataset, Dataset
 # Load and prep dataset
 SYSTEM_PROMPT = """
 使用MarkDown格式进行输出。
-按照以下格式回答:
+按照以下格式进行数学问题的细致推理和解答:
+
 <Think>
-..
+1. 理解问题要求
+2. 列出已知条件
+3. 设计解题策略
+4. 逐步计算过程
+5. 验证结果
 </Think>
+
 <answer>
-..
+1. 一步步验证推理结果答案是否准确，并以MarkDown格式输出
+2. 补充说明解法的适用条件或限制
+3. 可能存在的其他解法或变化
+4. 相关的数学概念和注意事项
 </answer>
 """
 
