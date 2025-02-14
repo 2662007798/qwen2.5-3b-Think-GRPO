@@ -414,7 +414,7 @@ class WandbCallback(TrainerCallback):
 from trl import GRPOConfig, GRPOTrainer
 training_args = GRPOConfig(
     use_vllm = True, # use vLLM for fast inference!
-    learning_rate = 1e-6,
+    learning_rate = 5e-6,
     adam_beta1 = 0.9,
     adam_beta2 = 0.99,
     weight_decay = 0.1,
