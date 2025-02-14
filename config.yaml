@@ -1,0 +1,54 @@
+# 模型配置
+model:
+  name: "/home/jc/mod/qwen2.5-3b-Instruct"
+  max_seq_length: 2048
+  lora_rank: 64
+  load_in_4bit: true
+  fast_inference: true
+  gpu_memory_utilization: 0.75
+  use_cuda_graph: true
+
+# 训练配置
+training:
+  learning_rate: 1e-6
+  batch_size: 1
+  gradient_accumulation_steps: 4
+  max_steps: 500
+  save_steps: 500
+  warmup_ratio: 0.1
+  weight_decay: 0.1
+  max_grad_norm: 0.1
+
+# 数据配置
+data:
+  dataset_name: "openai/gsm8k"
+  dataset_config: "main"
+  split: "train"
+  system_prompt: |
+    按照以下格式进行数学问题的细致推理和解答：
+    在Think中要理解问题要求并列出已知条件尝试设计解题策略开始逐步计算过程并考虑验证结果
+    在answer中请详细验证推理结果答案是否准确并且补充说明解法的适用条件或限制查看可能存在的其他解法或变化思考相关的数学概念和注意事项并尝试使用MarkDown格式输出。
+    请使用中文并且使用以下格式进行输出：
+    <Think>
+    ...
+    </Think>
+
+    <answer>
+    ...
+    </answer>
+
+# wandb配置
+wandb:
+  project: "logic-rl"
+  enabled: true
+
+# 代理配置
+proxy:
+  http: "http://10.0.1.31:7890"
+  https: "http://10.0.1.31:7890"
+
+# 输出配置
+output:
+  dir: "outputs"
+  save_model: true
+  model_name: "grpo_saved_lora" 
