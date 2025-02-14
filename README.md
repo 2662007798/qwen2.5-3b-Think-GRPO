@@ -24,7 +24,7 @@ pip install --no-deps trl peft accelerate bitsandbytes
 
 如果没有  直接 
 ```
-pip -r requirements.txt
+pip install -r requirements.txt
 ```
 即可  
 
