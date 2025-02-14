@@ -132,37 +132,82 @@ def extract_hash_answer(text: str) -> str | None:
     return text.split("####")[1].strip()
 
 def get_gsm8k_questions(config, split = None) -> Dataset:
-    logger.info(f"开始加载数据集: {config['data']['dataset_name']}")
-    logger.info(f"数据集配置: {config['data']['dataset_config']}")
-    split = split or config['data']['split']
-    logger.info(f"使用数据集分割: {split}")
+    """
+    加载数据集的通用方法，支持本地文件和Hugging Face数据集
+    
+    Args:
+        config: 配置字典
+        split: 数据集分割，如果为None则使用配置文件中的split
+    
+    Returns:
+        Dataset: 处理后的数据集
+    """
+    logger.info("开始加载数据集...")
+    dataset_config = config['data']
+    split = split or dataset_config['split']
     
     try:
-        # 首先检查数据集路径是否存在
-        if not os.path.exists(config['data']['dataset_name']):
-            raise ValueError(f"数据集路径不存在: {config['data']['dataset_name']}")
-            
-        # 直接加载数据集，不尝试获取配置信息
-        logger.info("加载数据集文件...")
-        data = load_dataset(
-            config['data']['dataset_name'], 
-            config['data']['dataset_config']
-        )[split]
-        logger.info(f"原始数据集大小: {len(data)}")
+        # 打印数据集配置信息
+        logger.info("数据集配置:")
+        logger.info(f"- 类型: {dataset_config['dataset_type']}")
+        logger.info(f"- 路径/名称: {dataset_config['dataset_name']}")
+        logger.info(f"- 分割: {split}")
         
-        # 检查数据集的列
+        # 根据数据集类型选择加载方式
+        if dataset_config['dataset_type'].lower() == 'local':
+            # 本地数据集加载
+            dataset_path = dataset_config['dataset_name']
+            if not os.path.exists(dataset_path):
+                raise FileNotFoundError(f"本地数据集路径不存在: {dataset_path}")
+                
+            logger.info(f"从本地路径加载数据集 (格式: {dataset_config['dataset_format']})...")
+            data = load_dataset(
+                dataset_config['dataset_format'],
+                data_files=dataset_path,
+                split=split
+            )
+            
+        elif dataset_config['dataset_type'].lower() == 'huggingface':
+            # Hugging Face数据集加载
+            logger.info("从Hugging Face加载数据集...")
+            data = load_dataset(
+                dataset_config['dataset_name'],
+                dataset_config['dataset_config'],
+                split=split
+            )
+            
+        else:
+            raise ValueError(f"不支持的数据集类型: {dataset_config['dataset_type']}")
+        
+        # 打印数据集信息
+        logger.info(f"原始数据集大小: {len(data)}")
         logger.info(f"数据集列: {data.column_names}")
         
+        # 验证必要的列是否存在
+        required_columns = {'question', 'answer'}
+        missing_columns = required_columns - set(data.column_names)
+        if missing_columns:
+            raise ValueError(f"数据集缺少必要的列: {missing_columns}")
+        
+        # 处理数据集
         logger.info("处理数据集...")
-        data = data.map(lambda x: {
-            'prompt': [
-                {'role': 'system', 'content': config['data']['system_prompt']},
-                {'role': 'user', 'content': x['question']}
-            ],
-            'answer': extract_hash_answer(x['answer'])
-        })
+        data = data.map(
+            lambda x: {
+                'prompt': [
+                    {'role': 'system', 'content': dataset_config['system_prompt']},
+                    {'role': 'user', 'content': x['question']}
+                ],
+                'answer': extract_hash_answer(x['answer'])
+            },
+            remove_columns=data.column_names  # 移除原始列
+        )
+        
+        # 验证处理后的数据
+        if any(x['answer'] is None for x in data):
+            logger.warning("部分数据的answer字段解析失败")
+            
         logger.info(f"处理后数据集大小: {len(data)}")
-        logger.info("数据集处理完成")
+        logger.info("数据集加载完成")
         return data
         
     except Exception as e:
@@ -540,5 +585,4 @@ if __name__ == "__main__":
         text = tokenizer.apply_chat_template([
             {"role" : "user", "content" : "草莓里有几个r？"},
         ], tokenize = False, add_generation_prompt = True)
-        # ... 测试代码 ...
 
