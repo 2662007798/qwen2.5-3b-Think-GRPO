@@ -1,28 +1,29 @@
 # 模型配置
 model:
-  name: "/home/jc/mod/qwen2.5-3b-Instruct"
+  name: "/data/staryea/aigc_model/Qwen2.5-3B-Instruct"
   max_seq_length: 2048
   lora_rank: 64
   load_in_4bit: true
-  fast_inference: true
-  gpu_memory_utilization: 0.75
-  use_cuda_graph: true
+  fast_inference: false
+  gpu_memory_utilization: 0.2
 
 # 训练配置
 training:
-  learning_rate: 1e-6
+  learning_rate: 3.0e-6
   batch_size: 1
   gradient_accumulation_steps: 4
   max_steps: 500
   save_steps: 500
-  warmup_ratio: 0.1
+  warmup_ratio: 0.03
   weight_decay: 0.1
   max_grad_norm: 0.1
+  seed: 42
+  logging_steps: 1
 
 # 数据配置
 data:
-  dataset_name: "openai/gsm8k"
-  dataset_config: "main"
+  dataset_name: "/data/staryea/gsm8k/socratic"
+  dataset_config: "default"
   split: "train"
   system_prompt: |
     按照以下格式进行数学问题的细致推理和解答：
@@ -36,19 +37,35 @@ data:
     <answer>
     ...
     </answer>
+  output_format: |
+    <Think>
+    {Think}
+    </Think>
+    <answer>
+    {answer}
+    </answer>
 
 # wandb配置
 wandb:
   project: "logic-rl"
   enabled: true
 
-# 代理配置
-proxy:
-  http: "http://10.0.1.31:7890"
-  https: "http://10.0.1.31:7890"
 
 # 输出配置
 output:
   dir: "outputs"
   save_model: true
-  model_name: "grpo_saved_lora" 
+  model_name: "grpo_saved_lora"
+
+
+# 建议添加日志配置
+logging:
+  level: "INFO"
+  save_path: "logs"
+
+# 测试配置
+test:
+  enabled: false
+  temperature: 0.8
+  top_p: 0.95
+  max_tokens: 2048 
