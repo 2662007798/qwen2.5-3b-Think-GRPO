@@ -375,9 +375,7 @@ def manage_temp_dir():
 # 在程序开始时设置限制
 set_ulimit()
 
-# 设置环境变量
-os.environ['HTTPS_PROXY'] = 'http://10.0.1.31:7890'
-os.environ['HTTP_PROXY'] = 'http://10.0.1.31:7890'
+
 
 # wandb初始化
 wandb.init(
