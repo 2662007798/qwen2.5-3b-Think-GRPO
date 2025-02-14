@@ -84,10 +84,47 @@ We directly leverage [@willccbb](https://gist.github.com/willccbb/4676755236bb08
 
 import re
 from datasets import load_dataset, Dataset
+import os
+import yaml
+import wandb
+import resource
+import tempfile
+import shutil
+from datetime import datetime
+from contextlib import contextmanager
+from transformers.trainer_callback import TrainerCallback
 
-# Load and prep dataset
+# 加载配置
+with open("config.yaml", "r") as f:
+    config = yaml.safe_load(f)
+
+# 设置代理
+os.environ['HTTPS_PROXY'] = config['proxy']['https']
+os.environ['HTTP_PROXY'] = config['proxy']['http']
+
+def set_ulimit():
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
+    except Exception as e:
+        print(f"设置文件句柄限制失败: {e}")
+
+@contextmanager
+def manage_temp_dir():
+    original_temp = tempfile.gettempdir()
+    try:
+        temp_dir = tempfile.mkdtemp(prefix='train_temp_')
+        tempfile.tempdir = temp_dir
+        yield
+    finally:
+        tempfile.tempdir = original_temp
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception as e:
+            print(f"清理临时目录失败: {e}")
+
+# 系统提示词和数据集准备
 SYSTEM_PROMPT = """
-
 按照以下格式进行数学问题的细致推理和解答：
 在Think中要理解问题要求并列出已知条件尝试设计解题策略开始逐步计算过程并考虑验证结果
 在answer中请详细验证推理结果答案是否准确并且补充说明解法的适用条件或限制查看可能存在的其他解法或变化思考相关的数学概念和注意事项并尝试使用MarkDown格式输出。
@@ -120,19 +157,23 @@ def extract_hash_answer(text: str) -> str | None:
         return None
     return text.split("####")[1].strip()
 
-# uncomment middle messages for 1-shot prompting
-def get_gsm8k_questions(split = "train") -> Dataset:
-    data = load_dataset('openai/gsm8k', 'main')[split] # type: ignore
-    data = data.map(lambda x: { # type: ignore
+def get_gsm8k_questions(config, split = None) -> Dataset:
+    split = split or config['data']['split']
+    data = load_dataset(
+        config['data']['dataset_name'], 
+        config['data']['dataset_config']
+    )[split]
+    
+    data = data.map(lambda x: {
         'prompt': [
-            {'role': 'system', 'content': SYSTEM_PROMPT},
+            {'role': 'system', 'content': config['data']['system_prompt']},
             {'role': 'user', 'content': x['question']}
         ],
         'answer': extract_hash_answer(x['answer'])
-    }) # type: ignore
-    return data # type: ignore
+    })
+    return data
 
-dataset = get_gsm8k_questions()
+dataset = get_gsm8k_questions(config)
 def think_quality_reward_len_func(prompts, completions, answer, **kwargs) -> list[float]:
     responses = [completion[0]['content'] for completion in completions]
     
@@ -334,151 +375,92 @@ def xmlcount_reward_func(completions, **kwargs) -> list[float]:
 Now set up GRPO Trainer and all configurations!
 """
 
-import wandb
-from datetime import datetime
-from transformers.trainer_callback import TrainerCallback
-
-# 设置环境变量
-import os
-import resource
-import shutil
-import tempfile
-from contextlib import contextmanager
-
-# 设置文件句柄限制
-def set_ulimit():
-    try:
-        # 获取当前系统的限制
-        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
-        # 设置为最大值
-        resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
-        print(f"设置文件句柄限制为: {hard}")
-    except Exception as e:
-        print(f"设置文件句柄限制失败: {e}")
-
-@contextmanager
-def manage_temp_dir():
-    original_temp = tempfile.gettempdir()
-    try:
-        # 创建新的临时目录
-        temp_dir = tempfile.mkdtemp(prefix='train_temp_')
-        tempfile.tempdir = temp_dir
-        yield
-    finally:
-        # 恢复原始临时目录
-        tempfile.tempdir = original_temp
-        try:
-            shutil.rmtree(temp_dir, ignore_errors=True)
-        except Exception as e:
-            print(f"清理临时目录失败: {e}")
-
-# 在程序开始时设置限制
-set_ulimit()
-
-
-
-# wandb初始化
-wandb.init(
-    project="logic-rl",
-    name=f"train_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-    config={
-        "model": "qwen2.5-3b-Instruct",
-        "max_seq_length": max_seq_length,
-        "lora_rank": lora_rank,
-        "learning_rate": 1e-6,
-        "batch_size": 1,
-        "gradient_accumulation_steps": 4,
-    }
-)
-
-# 自定义wandb回调
+# wandb回调
 class WandbCallback(TrainerCallback):
-    def on_train_begin(self, args, state, control, **kwargs):
-        pass
-        
-    def on_train_end(self, args, state, control, **kwargs):
-        pass
-        
     def on_log(self, args, state, control, logs=None, **kwargs):
         if logs:
-            # 记录所有指标
             wandb.log(logs)
-            
-            # 添加自定义指标
             if "reward" in logs:
                 wandb.log({
                     "total_reward": logs["reward"],
                     "reward_std": logs.get("reward_std", 0),
                 })
 
-from trl import GRPOConfig, GRPOTrainer
+# 训练配置
 training_args = GRPOConfig(
-    use_vllm = True, # use vLLM for fast inference!
-    learning_rate = 5e-6,
+    use_vllm = True,
+    learning_rate = config['training']['learning_rate'],
     adam_beta1 = 0.9,
     adam_beta2 = 0.99,
-    weight_decay = 0.1,
-    warmup_ratio = 0.1,
+    weight_decay = config['training']['weight_decay'],
+    warmup_ratio = config['training']['warmup_ratio'],
     lr_scheduler_type = "cosine",
     optim = "adamw_8bit",
     logging_steps = 1,
     bf16 = is_bfloat16_supported(),
     fp16 = not is_bfloat16_supported(),
-    per_device_train_batch_size = 1,
-    gradient_accumulation_steps = 1, # Increase to 4 for smoother training
+    per_device_train_batch_size = config['training']['batch_size'],
+    gradient_accumulation_steps = config['training']['gradient_accumulation_steps'],
     num_generations = 2,
     max_prompt_length = 256,
-    max_completion_length = 2048,
-    max_steps = 500,
-    save_steps = 500,
-    max_grad_norm = 0.1,
-    report_to = "wandb",  # 启用wandb记录
-    output_dir = "outputs",
+    max_completion_length = config['model']['max_seq_length'],
+    max_steps = config['training']['max_steps'],
+    save_steps = config['training']['save_steps'],
+    max_grad_norm = config['training']['max_grad_norm'],
+    report_to = "wandb" if config['wandb']['enabled'] else "none",
+    output_dir = config['output']['dir'],
 )
 
-"""And let's run the trainer! If you scroll up, you'll see a table of rewards. The goal is to see the `reward` column increase!
+def main():
+    set_ulimit()
+    
+    if config['wandb']['enabled']:
+        wandb.init(
+            project=config['wandb']['project'],
+            name=f"train_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            config=config
+        )
 
-You might have to wait 150 to 200 steps for any action. You'll probably get 0 reward for the first 100 steps. Please be patient!
+    dataset = get_gsm8k_questions(config)
+    
+    trainer = GRPOTrainer(
+        model = model,
+        processing_class = tokenizer,
+        reward_funcs = [
+            xmlcount_reward_func,
+            soft_format_reward_func,
+            strict_format_reward_func,
+            think_quality_reward_func,
+            answer_quality_reward_func,
+            correctness_reward_func,
+            think_quality_reward_len_func,
+            answer_quality_reward_len_func
+        ],
+        args = training_args,
+        train_dataset = dataset,
+    )
 
-| Step | Training Loss | reward    | reward_std | completion_length | kl       |
-|------|---------------|-----------|------------|-------------------|----------|
-| 1    | 0.000000      | 0.125000  | 0.000000   | 200.000000        | 0.000000 |
-| 2    | 0.000000      | 0.072375  | 0.248112   | 200.000000        | 0.000000 |
-| 3    | 0.000000      | -0.079000 | 0.163776   | 182.500000        | 0.000005 |
+    trainer.add_callback(WandbCallback())
 
-"""
+    with manage_temp_dir():
+        try:
+            trainer.train()
+        finally:
+            if config['wandb']['enabled']:
+                wandb.finish()
 
-trainer = GRPOTrainer(
-    model = model,
-    processing_class = tokenizer,
-    reward_funcs = [
-        xmlcount_reward_func,
-        soft_format_reward_func,
-        strict_format_reward_func,
-        # int_reward_func,  移除只要纯数字的答案
-        think_quality_reward_func,   # 添加思考质量奖励函数
-        answer_quality_reward_func,  # 添加答案质量奖励
-        correctness_reward_func,
-        think_quality_reward_len_func, #思考长度奖励函数
-        answer_quality_reward_len_func #答案长度奖励函数
-    ],
-    args = training_args,
-    train_dataset = dataset,
-)
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
-# 添加wandb回调
-trainer.add_callback(WandbCallback())
+    # 保存模型
+    if config['output']['save_model']:
+        model.save_lora(
+            os.path.join(config['output']['dir'], 
+            config['output']['model_name'])
+        )
 
-# 在训练代码周围使用临时目录管理
-with manage_temp_dir():
-    try:
-        trainer.train()
-    finally:
-        wandb.finish()
-
-    # 清理CUDA缓存
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+if __name__ == "__main__":
+    main()
 
 """<a name="Inference"></a>
 ### Inference
