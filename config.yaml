@@ -23,17 +23,17 @@ training:
 # 数据配置
 data:
   # 方式1: 本地数据集
-  dataset_type: "local"  # 或 "huggingface"
-  dataset_name: "/data/staryea/gsm8k/socratic"
-  dataset_format: "json"  # 本地数据集格式：json, csv, parquet 等
-  dataset_config: "default"
-  split: "train"
+  #dataset_type: "local"  # 或 "huggingface"
+  #dataset_name: "/data/staryea/gsm8k/socratic"
+  #dataset_format: "json"  # 本地数据集格式：json, csv, parquet 等
+  #dataset_config: "default"
+  #split: "train"
   
   # 或者方式2: Hugging Face数据集
-  # dataset_type: "huggingface"
-  # dataset_name: "gsm8k"
-  # dataset_config: "main"
-  # split: "train"
+  dataset_type: "huggingface"
+  dataset_name: "gsm8k"
+  dataset_config: "main"
+  split: "train"
   
   system_prompt: |
     按照以下格式进行数学问题的细致推理和解答：
