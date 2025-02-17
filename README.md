@@ -1,7 +1,10 @@
 # GRPO中文数学推理训练
 
 本项目使用GRPO(Guided Reward Policy Optimization)方法来训练中文数学推理模型。
+基于unsloth原因本项目目前只支持单卡，如需多卡和分布式请参考我们另外的项目
+https://github.com/826568389/GRPO-R1
 
+如需要打印RL过程模型的输出，请在配置文件中设置log级别为debug
 ## 最新更新
 
 ### 2025-02-14 更新
